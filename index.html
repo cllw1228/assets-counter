@@ -1,0 +1,264 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <title>個人資產配置儀表板</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+</head>
+<body class="bg-slate-100 p-4 md:p-8 font-sans">
+    <div class="max-w-6xl mx-auto">
+        
+        <div class="flex flex-col md:flex-row justify-between items-start mb-8 gap-4">
+            <div>
+                <h1 class="text-2xl font-black text-slate-800 tracking-tight">ASSET MANAGEMENT</h1>
+                <div id="status" class="text-[10px] text-slate-400 font-mono mt-1">系統就緒</div>
+            </div>
+            
+            <div class="bg-slate-900 text-white p-6 rounded-3xl shadow-xl min-w-[280px] text-right">
+                <p class="text-indigo-300 text-xs font-bold uppercase tracking-widest mb-1">Total Net Worth</p>
+                <h1 id="grand-total" class="text-4xl font-black">NT$ 0</h1>
+            </div>
+        </div>
+
+        <div class="grid grid-cols-1 lg:grid-cols-2 gap-8">
+            
+            <div class="space-y-6">
+                <div class="bg-white rounded-3xl p-6 shadow-sm border border-slate-200">
+                    <h2 class="text-lg font-bold mb-4 flex justify-between items-center text-slate-800">
+                        <span>📈 投資標的 (左上)</span>
+                        <span id="stock-total-label" class="text-indigo-600 text-sm font-mono">NT$ 0</span>
+                    </h2>
+                    <div class="flex gap-2 mb-6">
+                        <input id="stock-code" type="text" placeholder="代碼" class="flex-1 p-3 bg-slate-50 rounded-xl outline-none focus:ring-2 focus:ring-indigo-500 text-sm">
+                        <input id="stock-amount" type="number" placeholder="股數" class="w-24 p-3 bg-slate-50 rounded-xl outline-none focus:ring-2 focus:ring-indigo-500 text-sm">
+                        <button onclick="addStockAsset()" id="add-stock-btn" class="bg-slate-800 text-white px-4 rounded-xl font-bold hover:bg-black transition-all">+</button>
+                    </div>
+                    <div class="overflow-x-auto">
+                        <table class="w-full text-sm">
+                            <tbody id="stock-body" class="divide-y divide-slate-50"></tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+
+            <div class="space-y-6">
+                
+                <div class="bg-white rounded-3xl p-6 shadow-sm border border-slate-200">
+                    <h2 class="text-lg font-bold mb-4 flex justify-between items-center text-slate-800">
+                        <span>🏦 銀行帳戶 (右側)</span>
+                        <span id="bank-total-label" class="text-emerald-600 text-sm font-mono">NT$ 0</span>
+                    </h2>
+                    <div class="flex gap-2 mb-4">
+                        <input id="bank-name" type="text" placeholder="銀行名稱" class="flex-1 p-3 bg-slate-50 rounded-xl outline-none text-sm">
+                        <input id="bank-balance" type="number" placeholder="金額" class="w-32 p-3 bg-slate-50 rounded-xl outline-none text-sm">
+                        <button onclick="addBankAccount()" class="bg-slate-800 text-white px-4 rounded-xl font-bold hover:bg-black transition-all">+</button>
+                    </div>
+                    <div id="bank-list" class="space-y-2"></div>
+                </div>
+
+                <div class="bg-white rounded-3xl p-6 shadow-sm border border-slate-200">
+                    <h2 class="text-lg font-bold mb-4 flex justify-between items-center text-slate-800">
+                        <span>🏠 房地產與其他資產</span>
+                        <span id="other-total-label" class="text-amber-600 text-sm font-mono">NT$ 0</span>
+                    </h2>
+                    <div class="space-y-2 mb-4">
+                        <input id="other-name" type="text" placeholder="項目名稱 (如：台北小資宅)" class="w-full p-3 bg-slate-50 rounded-xl outline-none text-sm font-bold">
+                        <div class="flex gap-2">
+                            <input id="other-value" type="number" placeholder="目前市值" class="flex-1 p-3 bg-slate-50 rounded-xl outline-none text-sm">
+                            <input id="other-loan" type="number" placeholder="貸款餘額" class="flex-1 p-3 bg-slate-50 rounded-xl outline-none text-sm text-red-500">
+                            <button onclick="addOtherAsset()" class="bg-slate-800 text-white px-6 rounded-xl font-bold hover:bg-black transition-all">新增</button>
+                        </div>
+                    </div>
+                    <div id="other-list" class="space-y-2"></div>
+                </div>
+
+                <button onclick="clearAllData()" class="w-full py-3 text-slate-300 hover:text-red-400 text-xs transition-colors">清空所有儀表板資料</button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+    const GAS_URL = 'https://script.google.com/macros/s/AKfycby1qy4_NA_lOQJAo0hWvuvjc-Bi1JU2zGdo3ODCKbcACoGy7POiddg4gsc2QmLl7YgFUQ/exec'; 
+
+    let myPortfolio = JSON.parse(localStorage.getItem('myPortfolio')) || [];
+    let myBanks = JSON.parse(localStorage.getItem('myBanks')) || [];
+    let myOthers = JSON.parse(localStorage.getItem('myOthers')) || []; 
+    let marketPrices = {};
+
+    // 1. 頁面加載時自動初始化
+    async function initData() {
+        const status = document.getElementById('status');
+        if (myPortfolio.length === 0 && myBanks.length === 0 && myOthers.length === 0) {
+            status.innerText = "系統就緒，請新增資產";
+            renderUI(); return;
+        }
+
+        // --- 提示：同步中 ---
+        status.innerHTML = '<span class="flex items-center gap-2 text-indigo-500 font-bold animate-pulse">⏳ 正在同步所有標的行情，請稍候...</span>';
+        
+        try {
+            for (let item of myPortfolio) {
+                status.innerText = `🔄 正在獲取 ${item.code} 報價...`;
+                const res = await fetch(`${GAS_URL}?code=${item.code}`);
+                const data = await res.json();
+                marketPrices[item.code] = data.price || 0;
+            }
+            status.innerText = `✅ 最後同步時間: ${new Date().toLocaleTimeString()}`;
+        } catch (e) {
+            status.innerHTML = '<span class="text-red-400">⚠️ 部分價格更新失敗，請重新整理</span>';
+        }
+        renderUI();
+    }
+
+    // 2. 處理股票資產 (加入輸入中的提示)
+    async function addStockAsset() {
+        const codeInput = document.getElementById('stock-code');
+        const amountInput = document.getElementById('stock-amount');
+        const status = document.getElementById('status');
+        const btn = document.getElementById('add-stock-btn');
+
+        const code = codeInput.value.trim().toUpperCase();
+        const amount = parseFloat(amountInput.value);
+
+        if (!code || !amount) {
+            status.innerHTML = '<span class="text-amber-500">請輸入完整的代碼與股數</span>';
+            return;
+        }
+
+        // --- 提示：開始查詢 ---
+        btn.disabled = true; // 鎖定按鈕防止重複點擊
+        const originalBtnText = btn.innerText;
+        btn.innerText = "..."; 
+        status.innerHTML = `<span class="flex items-center gap-2 text-indigo-600 font-bold animate-pulse">🔍 正在向雲端查詢 ${code} 最新報價，請稍候...</span>`;
+
+        try {
+            const res = await fetch(`${GAS_URL}?code=${code}`);
+            const data = await res.json();
+            
+            if (data.price) {
+                marketPrices[code] = data.price;
+                const idx = myPortfolio.findIndex(i => i.code === code);
+                if (idx > -1) myPortfolio[idx].amount = amount;
+                else myPortfolio.push({ code, amount });
+
+                saveAndRender();
+                status.innerText = `✅ ${code} 新增成功！價格：NT$ ${data.price.toLocaleString()}`;
+            } else {
+                throw new Error("查無價格");
+            }
+        } catch (e) {
+            status.innerHTML = `<span class="text-red-500 font-bold">❌ 查詢失敗！請確認代碼是否正確 (例如 2330 或 TPE:2330)</span>`;
+        } finally {
+            // 恢復 UI 狀態
+            btn.disabled = false;
+            btn.innerText = originalBtnText;
+            codeInput.value = '';
+            amountInput.value = '';
+        }
+    }
+
+    // --- 以下功能保持不變 ---
+    function addBankAccount() {
+        const name = document.getElementById('bank-name').value.trim();
+        const balance = parseFloat(document.getElementById('bank-balance').value);
+        if (!name || isNaN(balance)) return;
+        myBanks.push({ name, balance });
+        saveAndRender();
+        document.getElementById('bank-name').value = '';
+        document.getElementById('bank-balance').value = '';
+    }
+
+    function addOtherAsset() {
+        const name = document.getElementById('other-name').value.trim();
+        const value = parseFloat(document.getElementById('other-value').value) || 0;
+        const loan = parseFloat(document.getElementById('other-loan').value) || 0;
+        if (!name) return;
+        myOthers.push({ name, value, loan });
+        saveAndRender();
+        document.getElementById('other-name').value = '';
+        document.getElementById('other-value').value = '';
+        document.getElementById('other-loan').value = '';
+    }
+
+    function deleteItem(type, index) {
+        if (type === 'stock') myPortfolio.splice(index, 1);
+        if (type === 'bank') myBanks.splice(index, 1);
+        if (type === 'other') myOthers.splice(index, 1);
+        saveAndRender();
+    }
+
+    function saveAndRender() {
+        localStorage.setItem('myPortfolio', JSON.stringify(myPortfolio));
+        localStorage.setItem('myBanks', JSON.stringify(myBanks));
+        localStorage.setItem('myOthers', JSON.stringify(myOthers));
+        renderUI();
+    }
+
+    function renderUI() {
+        // 股票渲染
+        let stockTotal = 0;
+        const stockBody = document.getElementById('stock-body');
+        stockBody.innerHTML = '';
+        myPortfolio.forEach((item, i) => {
+            const p = marketPrices[item.code] || 0;
+            const sub = p * item.amount;
+            stockTotal += sub;
+            stockBody.innerHTML += `
+                <tr>
+                    <td class="py-3 font-bold">${item.code}
+                        <div class="text-[10px] font-normal text-slate-400">NT$ ${p.toLocaleString()}</div>
+                    </td>
+                    <td class="text-right font-mono text-indigo-600 font-bold">NT$ ${sub.toLocaleString()}</td>
+                    <td class="text-right"><button onclick="deleteItem('stock', ${i})" class="text-slate-300 hover:text-red-500">✕</button></td>
+                </tr>`;
+        });
+
+        // 銀行渲染
+        let bankTotal = 0;
+        const bankList = document.getElementById('bank-list');
+        bankList.innerHTML = '';
+        myBanks.forEach((item, i) => {
+            bankTotal += item.balance;
+            bankList.innerHTML += `
+                <div class="flex justify-between p-3 bg-slate-50 rounded-xl text-sm group">
+                    <span class="font-bold text-slate-600">${item.name}</span>
+                    <div class="flex gap-4">
+                        <span class="font-mono">NT$ ${item.balance.toLocaleString()}</span>
+                        <button onclick="deleteItem('bank', ${i})" class="text-slate-300 hover:text-red-500 opacity-0 group-hover:opacity-100">✕</button>
+                    </div>
+                </div>`;
+        });
+
+        // 其他資產渲染 (市值 - 貸款)
+        let otherTotal = 0;
+        const otherList = document.getElementById('other-list');
+        otherList.innerHTML = '';
+        myOthers.forEach((item, i) => {
+            const net = item.value - item.loan;
+            otherTotal += net;
+            otherList.innerHTML += `
+                <div class="p-3 bg-slate-50 rounded-xl text-sm mb-2 group">
+                    <div class="flex justify-between mb-1">
+                        <span class="font-black text-slate-700">${item.name}</span>
+                        <button onclick="deleteItem('other', ${i})" class="text-slate-300 hover:text-red-500 opacity-0 group-hover:opacity-100">✕</button>
+                    </div>
+                    <div class="flex justify-between text-[10px] text-slate-400 font-mono">
+                        <span>市值: ${item.value.toLocaleString()}</span>
+                        <span>貸款: -${item.loan.toLocaleString()}</span>
+                    </div>
+                    <div class="text-right font-bold text-amber-600">淨值: NT$ ${net.toLocaleString()}</div>
+                </div>`;
+        });
+
+        document.getElementById('stock-total-label').innerText = `NT$ ${stockTotal.toLocaleString()}`;
+        document.getElementById('bank-total-label').innerText = `NT$ ${bankTotal.toLocaleString()}`;
+        document.getElementById('other-total-label').innerText = `NT$ ${otherTotal.toLocaleString()}`;
+        document.getElementById('grand-total').innerText = `NT$ ${(stockTotal + bankTotal + otherTotal).toLocaleString()}`;
+    }
+
+    function clearAllData() { if (confirm("確定清空所有資料嗎？")) { localStorage.clear(); location.reload(); } }
+
+    initData();
+    </script>
+</body>
+</html>
